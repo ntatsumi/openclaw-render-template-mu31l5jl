@@ -45,7 +45,12 @@ services:
       # Embeddings (text-embedding-3-large), multi-query expansion and LLM
       # chunking all route here. No ANTHROPIC_API_KEY: GBrain >= v0.46.21.0
       # resolves chat/expansion from whichever provider key is present.
-      # FILL THIS IN (or leave it in /data/.env — the entrypoint reads both).
+      # Keep this key in /data/.env (Envars tab), NOT here. AlphaClaw's
+      # reloadEnv() overwrites process.env from /data/.env and DELETES any of
+      # its known keys the file omits — OPENAI_API_KEY is one. Setting it only
+      # in the dashboard means the agent loses it at startup. This entry exists
+      # for rebuilding the service from scratch, where /data/.env does not yet
+      # exist; on the live box the file is authoritative.
       - key: OPENAI_API_KEY
         sync: false
 

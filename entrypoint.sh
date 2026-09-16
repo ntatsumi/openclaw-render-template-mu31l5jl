@@ -26,22 +26,27 @@ warn() { echo "[entrypoint] WARN: $*" >&2; }
 # (keyword-only) and require a later `gbrain init --force` to repair.
 #
 # Parsed line-by-line rather than `set -a; . /data/.env` so the file is treated
-# as data, not shell. Real environment (Render dashboard) always wins.
+# as data, not shell.
+#
+# PRECEDENCE: the file wins over the inherited environment. This deliberately
+# matches AlphaClaw's own reloadEnv() (lib/server/env.js), which overwrites
+# process.env from /data/.env and DELETES any of its known keys that the file
+# omits. If this script used the opposite rule, a key present in both places
+# with different values would have gbrain init and every embedding call using
+# the Render value while the agent used the file value — two accounts, silently.
 # ---------------------------------------------------------------------------
 if [ -f /data/.env ]; then
-  log "Loading /data/.env (existing environment takes precedence)"
+  log "Loading /data/.env (file takes precedence, matching AlphaClaw)"
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line#"${line%%[![:space:]]*}"}"      # ltrim
     case "$line" in ''|'#'*) continue ;; esac
     line="${line#export }"
     key="${line%%=*}"
     case "$key" in ''|*[!A-Za-z0-9_]*) continue ;; esac
-    if [ -z "${!key:-}" ]; then
-      val="${line#*=}"
-      val="${val%\"}"; val="${val#\"}"
-      val="${val%\'}"; val="${val#\'}"
-      export "$key=$val"
-    fi
+    val="${line#*=}"
+    val="${val%\"}"; val="${val#\"}"
+    val="${val%\'}"; val="${val#\'}"
+    export "$key=$val"
   done < /data/.env
 fi
 
