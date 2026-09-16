@@ -1,19 +1,87 @@
+# Render Blueprint: OpenClaw + AlphaClaw + GBrain (PGLite engine), OpenAI-only.
+#
+# READ THIS FIRST. This file is written to match the service you ALREADY run,
+# so that applying it is a no-op on infrastructure and only adds env vars.
+# Three fields are load-bearing and must not drift from the live service:
+#
+#   disk.name      openclaw-data   <- renaming this makes Render provision a
+#                                     NEW empty disk. Your brain, openclaw.json,
+#                                     agent state and Slack pairings live on the
+#                                     old one. The GBrain reference template
+#                                     calls it `alphaclaw-data`; do not copy that.
+#   disk.sizeGB    10              <- shrinking is rejected; growing is one-way.
+#   PORT           3000            <- the base template's Express proxy is wired
+#                                     to 3000. The reference uses 10000.
+#
+# `plan` is deliberately OMITTED. Render retains the current compute plan for an
+# existing service when the field is absent, so this file can never resize the
+# instance. Do not add it back just to document the plan — a wrong value here
+# silently resizes on the next sync.
+#
+# Note that a sync DOES apply to this service even though it was created from a
+# deploy button rather than a blueprint: Render matches on `name`, so `name:
+# AlphaClaw` and `disk.name: openclaw-data` below must keep matching the live
+# service exactly.
+
 services:
   - type: web
+    name: AlphaClaw            # must match the existing service name
     runtime: docker
-    name: AlphaClaw
-    plan: starter
     healthCheckPath: /health
+    dockerfilePath: ./Dockerfile
+
+    disk:
+      name: openclaw-data      # DO NOT RENAME — see header
+      mountPath: /data
+      sizeGB: 10
+
     envVars:
+      # --- unchanged from the base template ---
+      - key: PORT
+        value: 3000
       - key: SETUP_PASSWORD
         sync: false
       - key: OPENCLAW_GATEWAY_TOKEN
         generateValue: true
       - key: WEBHOOK_TOKEN
         generateValue: true
-      - key: PORT
-        value: 3000
-    disk:
-      name: openclaw-data
-      mountPath: /data
-      sizeGB: 10
+
+      # --- required by GBrain ---
+      # Embeddings (text-embedding-3-large), multi-query expansion and LLM
+      # chunking all route here. No ANTHROPIC_API_KEY: GBrain >= v0.46.21.0
+      # resolves chat/expansion from whichever provider key is present.
+      # Keep this key in /data/.env (Envars tab), NOT here. AlphaClaw's
+      # reloadEnv() overwrites process.env from /data/.env and DELETES any of
+      # its known keys the file omits — OPENAI_API_KEY is one. Setting it only
+      # in the dashboard means the agent loses it at startup. This entry exists
+      # for rebuilding the service from scratch, where /data/.env does not yet
+      # exist; on the live box the file is authoritative.
+      - key: OPENAI_API_KEY
+        sync: false
+
+      # GBRAIN_HOME is a PARENT directory; gbrain appends '.gbrain' itself.
+      # /data -> config at /data/.gbrain/config.json,
+      #          brain at /data/.gbrain/brain.pglite. Both persist on the disk.
+      - key: GBRAIN_HOME
+        value: /data
+
+      # --- brain repo (git as system of record) ---
+      # FILL THIS IN: owner/repo of the brain repo, e.g. arthur-ai/arthur-atlas-brain.
+      # Cloned to /data/brain, deliberately outside /data/.openclaw so it is not
+      # swept into the arthur-atlas workspace backup as a nested repo.
+      # Set in the Render dashboard, NOT committed: this repo is PUBLIC and the
+      # brain repo is private. Value: arthur-ai/arthur-atlas-brain
+      - key: GBRAIN_BRAIN_REPO
+        sync: false
+
+      # Needs `repo` scope on the brain repo. You already have a GITHUB_TOKEN
+      # for the workspace backup — reuse it if its scope covers the new repo,
+      # otherwise widen it. If it currently lives in /data/.env, leave it there
+      # and delete this entry; the entrypoint reads /data/.env too.
+      - key: GITHUB_TOKEN
+        sync: false
+
+    # Optional: bump to upgrade GBrain. Leaving this unset uses the Dockerfile
+    # default (668b9bac = v0.50.5.0). Must stay >= v0.46.21.0 for OpenAI-only.
+    # buildFilter/dockerBuildArgs equivalent is set in the dashboard under
+    # Settings -> Docker Build Arguments if you prefer not to edit the Dockerfile.
