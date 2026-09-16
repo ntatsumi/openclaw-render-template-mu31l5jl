@@ -13,15 +13,20 @@
 #   PORT           3000            <- the base template's Express proxy is wired
 #                                     to 3000. The reference uses 10000.
 #
-# Confirm `plan` against the dashboard before applying — this service is
-# 8 GB / 2 vCPU and the value below must match it exactly, or a blueprint sync
-# will resize the instance.
+# `plan` is deliberately OMITTED. Render retains the current compute plan for an
+# existing service when the field is absent, so this file can never resize the
+# instance. Do not add it back just to document the plan — a wrong value here
+# silently resizes on the next sync.
+#
+# Note that a sync DOES apply to this service even though it was created from a
+# deploy button rather than a blueprint: Render matches on `name`, so `name:
+# AlphaClaw` and `disk.name: openclaw-data` below must keep matching the live
+# service exactly.
 
 services:
   - type: web
     name: AlphaClaw            # must match the existing service name
     runtime: docker
-    plan: pro_plus             # VERIFY: must equal the current plan (8 GB)
     healthCheckPath: /health
     dockerfilePath: ./Dockerfile
 
