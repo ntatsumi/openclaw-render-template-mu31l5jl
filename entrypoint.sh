@@ -122,11 +122,32 @@ if [ -n "${GBRAIN_BRAIN_REPO:-}" ]; then
   fi
   git config --global --add safe.directory "$BRAIN_REPO_DIR" || true
 
+  # Never let git block on an interactive credential prompt: there is no tty in
+  # a container, so an unauthenticated clone would otherwise die with the
+  # unhelpful "could not read Username ... No such device or address".
+  export GIT_TERMINAL_PROMPT=0
+
   if [ ! -d "$BRAIN_REPO_DIR/.git" ]; then
     log "Cloning brain repo $GBRAIN_BRAIN_REPO -> $BRAIN_REPO_DIR"
-    # Fatal: a first boot that silently proceeds without the brain repo would
-    # initialize an empty brain and look healthy.
-    git clone "https://github.com/${GBRAIN_BRAIN_REPO}.git" "$BRAIN_REPO_DIR"
+    # NOT fatal. This was fatal originally, which meant a GITHUB_TOKEN scope
+    # problem took the whole agent offline via a failed deploy. GBrain is fully
+    # functional without the brain repo — it just has nothing to sync — so a
+    # clone failure degrades one feature instead of the service. Recover by
+    # fixing the token and redeploying (or cloning by hand over SSH).
+    if ! git clone "https://github.com/${GBRAIN_BRAIN_REPO}.git" "$BRAIN_REPO_DIR" 2>&1; then
+      rm -rf "$BRAIN_REPO_DIR"
+      warn "Could not clone $GBRAIN_BRAIN_REPO. Brain repo sync is DISABLED for"
+      warn "this boot; everything else (PGLite brain, skills, agent) still runs."
+      if [ -z "${GITHUB_TOKEN:-}" ]; then
+        warn "Cause: GITHUB_TOKEN is not set in the environment or /data/.env."
+      else
+        warn "GITHUB_TOKEN is set, so this is most likely a SCOPE problem: a"
+        warn "fine-grained PAT must list $GBRAIN_BRAIN_REPO explicitly, not just"
+        warn "the workspace repo. Verify with:"
+        warn "  curl -sI -H \"Authorization: Bearer \$GITHUB_TOKEN\" \\"
+        warn "    https://api.github.com/repos/$GBRAIN_BRAIN_REPO | head -1"
+      fi
+    fi
   else
     log "Brain repo present; pulling latest."
     git -C "$BRAIN_REPO_DIR" pull --ff-only || warn "git pull failed; continuing with the on-disk copy."
